@@ -1,51 +1,68 @@
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta # Ensure you pip install pandas_ta
+import pandas_ta as ta
 from datetime import datetime
+import re
 
 def get_income_scan(tickers):
     final_list = []
     for symbol in tickers:
         try:
             ticker = yf.Ticker(symbol)
-            # 1. Fetch 1 Year of Data for Technicals
             df = ticker.history(period="1y")
-            current_price = df['Close'].iloc[-1]
+            if df.empty: continue
             
-            # 2. Indicators: SMA 200 & RSI (14)
+            # Technical Indicators
+            current_price = df['Close'].iloc[-1]
             df['SMA_200'] = ta.sma(df['Close'], length=200)
             df['RSI'] = ta.rsi(df['Close'], length=14)
             
-            # 3. Filter: Only stocks in a healthy uptrend
+            # Filter: Above 200-day SMA
             if current_price < df['SMA_200'].iloc[-1]: continue 
 
-            # 4. Options Math (Targeting ~30-40 days out)
+            # Options Selection (~30 days out)
             expiries = ticker.options
-            target_expiry = expiries[1] 
+            target_expiry = expiries[1] if len(expiries) > 1 else expiries[0]
             days_to_exp = (datetime.strptime(target_expiry, '%Y-%m-%d') - datetime.now()).days
             
-            # Find a 5% OTM Strike
             calls = ticker.option_chain(target_expiry).calls
-            otm_call = calls[calls['strike'] > current_price * 1.05].iloc[0]
+            # Pick first strike 3% or more OTM
+            otm_call = calls[calls['strike'] > current_price * 1.03].iloc[0]
             
-            # 5. Yield Calculations
             period_yield = (otm_call.bid / current_price)
-            annualized = period_yield * (365 / days_to_exp)
+            annualized = period_yield * (365 / max(days_to_exp, 1))
 
             final_list.append({
-                "Ticker": symbol,
-                "Price": round(current_price, 2),
-                "RSI": round(df['RSI'].iloc[-1], 1),
-                "Strike": otm_call.strike,
-                "Premium": otm_call.bid,
-                "Period Yield %": f"{period_yield:.2%}", # Your 2% target
-                "Annualized %": f"{annualized:.1%}",
-                "Protection %": f"{period_yield:.2%}"
+                "Ticker": symbol, "Price": round(current_price, 2),
+                "RSI": round(df['RSI'].iloc[-1], 1), "Strike": otm_call.strike,
+                "Premium": otm_call.bid, "Period Yield %": f"{period_yield:.2%}",
+                "Annualized %": f"{annualized:.1%}", "Protection %": f"{period_yield:.2%}"
             })
-        except Exception: continue
-        
+        except: continue
     return pd.DataFrame(final_list).sort_values("Period Yield %", ascending=False)
 
-# RUN SCAN
+# 1. Run the scan
 my_watch = ['QQQI', 'SPYI', 'NVDA', 'AMD', 'AAPL', 'MSFT', 'TSLA']
-print(get_income_scan(my_watch))
+df_results = get_income_scan(my_watch)
+markdown_table = df_results.to_markdown(index=False)
+
+# 2. Update the README.md file
+with open("README.md", "r") as f:
+    content = f.read()
+
+# This Regex finds the markers and swaps the content
+new_content = re.sub(
+    r".*",
+    f"\n{markdown_table}\n",
+    content,
+    flags=re.DOTALL
+)
+
+# Add a timestamp so you know it's fresh
+now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+new_content = re.sub(r"Last automated update:.*", f"Last automated update: {now}", new_content)
+
+with open("README.md", "w") as f:
+    f.write(new_content)
+
+print("Successfully updated README.md with fresh data.")
