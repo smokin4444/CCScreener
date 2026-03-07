@@ -8,75 +8,77 @@ def get_income_scan(tickers):
     final_list = []
     for symbol in tickers:
         try:
+            # We use a 2-year period to ensure we have enough data for a 200-day SMA
             ticker = yf.Ticker(symbol)
-            # Fetch data (increased period to ensure SMA200 calculation)
             df = ticker.history(period="2y")
-            if df.empty or len(df) < 200: 
-                print(f"Skipping {symbol}: Not enough price history.")
-                continue
             
-            # Technical Indicators
+            if df.empty or len(df) < 200:
+                continue
+
+            # Flatten columns if Yahoo returns a Multi-Index (common in 2026 updates)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            # Technicals
             current_price = df['Close'].iloc[-1]
             df['SMA_200'] = ta.sma(df['Close'], length=200)
             df['RSI'] = ta.rsi(df['Close'], length=14)
             
-            # Filter: Above 200-day SMA
+            # Trend Check
             if current_price < df['SMA_200'].iloc[-1]: continue 
 
-            # Options Selection
+            # Options Chain Check
             expiries = ticker.options
-            if not expiries:
-                print(f"Skipping {symbol}: No options found.")
-                continue
-                
+            if not expiries: continue
+            
+            # Target the monthly expiry (~30 days)
             target_expiry = expiries[1] if len(expiries) > 1 else expiries[0]
             days_to_exp = (datetime.strptime(target_expiry, '%Y-%m-%d') - datetime.now()).days
             
             chain = ticker.option_chain(target_expiry).calls
             if chain.empty: continue
             
-            # Pick first strike at least 3% OTM
+            # Find strikes at least 3% above current price
             otm_calls = chain[chain['strike'] > current_price * 1.03]
             if otm_calls.empty: continue
             
-            otm_call = otm_calls.iloc[0]
+            best_call = otm_calls.iloc[0]
             
-            period_yield = (otm_call.bid / current_price)
+            # Yield Math
+            period_yield = (best_call.bid / current_price)
             annualized = period_yield * (365 / max(days_to_exp, 1))
 
             final_list.append({
                 "Ticker": symbol, "Price": round(current_price, 2),
-                "RSI": round(df['RSI'].iloc[-1], 1), "Strike": otm_call.strike,
-                "Premium": otm_call.bid, "Period Yield %": f"{period_yield:.2%}",
+                "RSI": round(df['RSI'].iloc[-1], 1), "Strike": best_call.strike,
+                "Premium": best_call.bid, "Period Yield %": f"{period_yield:.2%}",
                 "Annualized %": f"{annualized:.1%}", "Protection %": f"{period_yield:.2%}"
             })
         except Exception as e:
-            print(f"Error processing {symbol}: {e}")
+            print(f"Skipping {symbol} due to error: {e}")
             continue
             
     return pd.DataFrame(final_list)
 
-# 1. Run the scan
+# Execution and README Update
 my_watch = ['QQQI', 'SPYI', 'NVDA', 'AMD', 'AAPL', 'MSFT', 'TSLA']
 df_results = get_income_scan(my_watch)
 
 if not df_results.empty:
     df_results = df_results.sort_values("Period Yield %", ascending=False)
+    # The 'tabulate' library is used here via to_markdown
     markdown_table = df_results.to_markdown(index=False)
 else:
     markdown_table = "No tickers currently meet the criteria."
 
-# 2. Update the README.md file
 with open("README.md", "r") as f:
     content = f.read()
 
-new_content = re.sub(
-    r".*",
-    f"\n{markdown_table}\n",
-    content,
-    flags=re.DOTALL
-)
+new_content = re.sub(r".*", 
+                     f"\n{markdown_table}\n", 
+                     content, flags=re.DOTALL)
 
+# Add timestamp
 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 new_content = re.sub(r"Last automated update:.*", f"Last automated update: {now}", new_content)
 
