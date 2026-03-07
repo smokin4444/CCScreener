@@ -9,8 +9,11 @@ def get_income_scan(tickers):
     for symbol in tickers:
         try:
             ticker = yf.Ticker(symbol)
-            df = ticker.history(period="1y")
-            if df.empty: continue
+            # Fetch data (increased period to ensure SMA200 calculation)
+            df = ticker.history(period="2y")
+            if df.empty or len(df) < 200: 
+                print(f"Skipping {symbol}: Not enough price history.")
+                continue
             
             # Technical Indicators
             current_price = df['Close'].iloc[-1]
@@ -20,14 +23,23 @@ def get_income_scan(tickers):
             # Filter: Above 200-day SMA
             if current_price < df['SMA_200'].iloc[-1]: continue 
 
-            # Options Selection (~30 days out)
+            # Options Selection
             expiries = ticker.options
+            if not expiries:
+                print(f"Skipping {symbol}: No options found.")
+                continue
+                
             target_expiry = expiries[1] if len(expiries) > 1 else expiries[0]
             days_to_exp = (datetime.strptime(target_expiry, '%Y-%m-%d') - datetime.now()).days
             
-            calls = ticker.option_chain(target_expiry).calls
-            # Pick first strike 3% or more OTM
-            otm_call = calls[calls['strike'] > current_price * 1.03].iloc[0]
+            chain = ticker.option_chain(target_expiry).calls
+            if chain.empty: continue
+            
+            # Pick first strike at least 3% OTM
+            otm_calls = chain[chain['strike'] > current_price * 1.03]
+            if otm_calls.empty: continue
+            
+            otm_call = otm_calls.iloc[0]
             
             period_yield = (otm_call.bid / current_price)
             annualized = period_yield * (365 / max(days_to_exp, 1))
@@ -38,19 +50,26 @@ def get_income_scan(tickers):
                 "Premium": otm_call.bid, "Period Yield %": f"{period_yield:.2%}",
                 "Annualized %": f"{annualized:.1%}", "Protection %": f"{period_yield:.2%}"
             })
-        except: continue
-    return pd.DataFrame(final_list).sort_values("Period Yield %", ascending=False)
+        except Exception as e:
+            print(f"Error processing {symbol}: {e}")
+            continue
+            
+    return pd.DataFrame(final_list)
 
 # 1. Run the scan
 my_watch = ['QQQI', 'SPYI', 'NVDA', 'AMD', 'AAPL', 'MSFT', 'TSLA']
 df_results = get_income_scan(my_watch)
-markdown_table = df_results.to_markdown(index=False)
+
+if not df_results.empty:
+    df_results = df_results.sort_values("Period Yield %", ascending=False)
+    markdown_table = df_results.to_markdown(index=False)
+else:
+    markdown_table = "No tickers currently meet the criteria."
 
 # 2. Update the README.md file
 with open("README.md", "r") as f:
     content = f.read()
 
-# This Regex finds the markers and swaps the content
 new_content = re.sub(
     r".*",
     f"\n{markdown_table}\n",
@@ -58,11 +77,8 @@ new_content = re.sub(
     flags=re.DOTALL
 )
 
-# Add a timestamp so you know it's fresh
 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 new_content = re.sub(r"Last automated update:.*", f"Last automated update: {now}", new_content)
 
 with open("README.md", "w") as f:
     f.write(new_content)
-
-print("Successfully updated README.md with fresh data.")
