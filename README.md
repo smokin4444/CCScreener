@@ -1,26 +1,18 @@
-# 💰 Income Bucket Dashboard
-**A Technical Screener for Covered Call Yields**
 
-This dashboard identifies high-yield covered call opportunities using a "Double Covered" approach for income funds (like QQQI) and a "Theta-Harvesting" approach for high-liquidity tech stocks.
+| Ticker   |   Price |   RSI |   Strike |   Premium | Period Yield %   | Annualized %   | Protection %   |
+|:---------|--------:|------:|---------:|----------:|:-----------------|:---------------|:---------------|
+| AMD      |  192.43 |  40.5 |    200   |      5.9  | 3.07%            | 93.3%          | 3.07%          |
+| TSLA     |  396.73 |  38.1 |    410   |      2.86 | 0.72%            | 87.7%          | 0.72%          |
+| NVDA     |  177.82 |  44.8 |    185   |      1.17 | 0.66%            | 80.1%          | 0.66%          |
+| QQQI     |   51.82 |  49.6 |     54   |      0.15 | 0.29%            | 2.6%           | 0.29%          |
+| SPYI     |   51.15 |  43.4 |     53   |      0.1  | 0.20%            | 1.8%           | 0.20%          |
+| AAPL     |  257.46 |  51.9 |    267.5 |      0.42 | 0.16%            | 19.8%          | 0.16%          |
 
----
-
-### 🛠 Strategy & Filters
-* **Trend Filter:** Only stocks trading above their **200-day Simple Moving Average (SMA)** are included to ensure we aren't "catching a falling knife."
-* **Entry Timing:** High **RSI (14)** values (above 70) indicate overbought conditions—the ideal time to sell call premium.
-* **Goal:** Target **1.5% - 3.0% Monthly Yield** (Period Return) while maintaining downside protection.
-
----
-
-### 📊 Live Yield Scan
-*The table below updates automatically every trading day.*
-
-| Ticker | Price | RSI | Strike | Premium | Period Yield % | Annualized % | Protection % |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| *Running initial scan...* | | | | | | | |
----
-
-### ⚠️ Risk Disclaimer
-Selling covered calls caps your upside potential. If a stock rallies past your strike, your shares may be called away. Always monitor the **Ex-Dividend date** (especially for QQQI) to avoid early assignment.
-
-*Last automated update: 2026-03-07*
+| Ticker   |   Price |   RSI |   Strike |   Premium | Period Yield %   | Annualized %   | Protection %   |
+|:---------|--------:|------:|---------:|----------:|:-----------------|:---------------|:---------------|
+| AMD      |  192.43 |  40.5 |    200   |      5.9  | 3.07%            | 93.3%          | 3.07%          |
+| TSLA     |  396.73 |  38.1 |    410   |      2.86 | 0.72%            | 87.7%          | 0.72%          |
+| NVDA     |  177.82 |  44.8 |    185   |      1.17 | 0.66%            | 80.1%          | 0.66%          |
+| QQQI     |   51.82 |  49.6 |     54   |      0.15 | 0.29%            | 2.6%           | 0.29%          |
+| SPYI     |   51.15 |  43.4 |     53   |      0.1  | 0.20%            | 1.8%           | 0.20%          |
+| AAPL     |  257.46 |  51.9 |    267.5 |      0.42 | 0.16%            | 19.8%          | 0.16%          |
