@@ -13,3 +13,5 @@ A technical analysis tool to find high-yield covered call opportunities.
 | Ticker | RSI | Period Yield | Annualized | Protection |
 | :--- | :--- | :--- | :--- | :--- |
 | QQQI | 58.2 | 1.83% | 22.3% | 1.83% |# CCScreener
+
+
