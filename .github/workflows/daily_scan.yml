@@ -1,41 +1,62 @@
-name: Daily Income Scan
+import yfinance as yf
+import pandas as pd
+import pandas_ta as ta
+from datetime import datetime
+import re
 
-on:
-  schedule:
-    # This runs at 11:00 PM UTC, which is 10:00 AM Melbourne time
-    - cron: '0 23 * * 0-4' 
-  workflow_dispatch: # This allows you to click "Run workflow" manually
+def get_income_scan(tickers):
+    final_list = []
+    for symbol in tickers:
+        try:
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period="2y")
+            if df.empty or len(df) < 200: continue
+            
+            # 2026 FIX: Flatten Multi-Index columns if present
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            
+            current_price = df['Close'].iloc[-1]
+            df['SMA_200'] = ta.sma(df['Close'], length=200)
+            df['RSI'] = ta.rsi(df['Close'], length=14)
+            
+            if current_price < df['SMA_200'].iloc[-1]: continue 
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-    # This section is critical: it allows the bot to update your README
-    permissions:
-      contents: write
+            expiries = ticker.options
+            if not expiries: continue
+            target_expiry = expiries[1] if len(expiries) > 1 else expiries[0]
+            days_to_exp = (datetime.strptime(target_expiry, '%Y-%m-%d') - datetime.now()).days
+            
+            chain = ticker.option_chain(target_expiry).calls
+            otm_calls = chain[chain['strike'] > current_price * 1.03]
+            if otm_calls.empty: continue
+            
+            best_call = otm_calls.iloc[0]
+            period_yield = (best_call.bid / current_price)
+            annualized = period_yield * (365 / max(days_to_exp, 1))
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+            final_list.append({
+                "Ticker": symbol, "Price": round(current_price, 2),
+                "RSI": round(df['RSI'].iloc[-1], 1), "Strike": best_call.strike,
+                "Premium": best_call.bid, "Period Yield %": f"{period_yield:.2%}",
+                "Annualized %": f"{annualized:.1%}", "Protection %": f"{period_yield:.2%}"
+            })
+        except: continue
+    return pd.DataFrame(final_list)
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+my_watch = ['QQQI', 'SPYI', 'NVDA', 'AMD', 'AAPL', 'MSFT', 'TSLA']
+df_results = get_income_scan(my_watch)
+markdown_table = df_results.sort_values("Period Yield %", ascending=False).to_markdown(index=False) if not df_results.empty else "No data met filters."
 
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install yfinance pandas pandas-ta tabulate
+with open("README.md", "r") as f:
+    content = f.read()
 
-      - name: Run Income Screener
-        run: python screener.py
+new_content = re.sub(r".*", 
+                     f"\n{markdown_table}\n", 
+                     content, flags=re.DOTALL)
 
-      - name: Commit and Push Changes
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add README.md
-          # Only commit if the table actually changed to avoid errors
-          git diff --staged --quiet || git commit -m "Auto-update: Fresh Yield Data $(date +'%Y-%m-%d')"
-          git push
+now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+new_content = re.sub(r"Last automated update:.*", f"Last automated update: {now}", new_content)
+
+with open("README.md", "w") as f:
+    f.write(new_content)
