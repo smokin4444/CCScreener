@@ -1,62 +1,31 @@
-import yfinance as yf
-import pandas as pd
-import pandas_ta as ta
-from datetime import datetime
-import re
+name: Daily Income Scan
+on:
+  schedule:
+    - cron: '0 23 * * 0-4' 
+  workflow_dispatch:
 
-def get_income_scan(tickers):
-    final_list = []
-    for symbol in tickers:
-        try:
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(period="2y")
-            if df.empty or len(df) < 200: continue
-            
-            # 2026 FIX: Flatten Multi-Index columns if present
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            
-            current_price = df['Close'].iloc[-1]
-            df['SMA_200'] = ta.sma(df['Close'], length=200)
-            df['RSI'] = ta.rsi(df['Close'], length=14)
-            
-            if current_price < df['SMA_200'].iloc[-1]: continue 
-
-            expiries = ticker.options
-            if not expiries: continue
-            target_expiry = expiries[1] if len(expiries) > 1 else expiries[0]
-            days_to_exp = (datetime.strptime(target_expiry, '%Y-%m-%d') - datetime.now()).days
-            
-            chain = ticker.option_chain(target_expiry).calls
-            otm_calls = chain[chain['strike'] > current_price * 1.03]
-            if otm_calls.empty: continue
-            
-            best_call = otm_calls.iloc[0]
-            period_yield = (best_call.bid / current_price)
-            annualized = period_yield * (365 / max(days_to_exp, 1))
-
-            final_list.append({
-                "Ticker": symbol, "Price": round(current_price, 2),
-                "RSI": round(df['RSI'].iloc[-1], 1), "Strike": best_call.strike,
-                "Premium": best_call.bid, "Period Yield %": f"{period_yield:.2%}",
-                "Annualized %": f"{annualized:.1%}", "Protection %": f"{period_yield:.2%}"
-            })
-        except: continue
-    return pd.DataFrame(final_list)
-
-my_watch = ['QQQI', 'SPYI', 'NVDA', 'AMD', 'AAPL', 'MSFT', 'TSLA']
-df_results = get_income_scan(my_watch)
-markdown_table = df_results.sort_values("Period Yield %", ascending=False).to_markdown(index=False) if not df_results.empty else "No data met filters."
-
-with open("README.md", "r") as f:
-    content = f.read()
-
-new_content = re.sub(r".*", 
-                     f"\n{markdown_table}\n", 
-                     content, flags=re.DOTALL)
-
-now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-new_content = re.sub(r"Last automated update:.*", f"Last automated update: {now}", new_content)
-
-with open("README.md", "w") as f:
-    f.write(new_content)
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches full history for stable git push
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install Deps
+        run: |
+          pip install yfinance pandas pandas-ta tabulate
+      - name: Run Scan
+        run: python screener.py
+      - name: Commit and Push
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git diff --staged --quiet || (git commit -m "Update Yields" && git push)
